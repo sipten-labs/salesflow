@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  SALESPERSON
+  VIEWER
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model Tenant {
+  id                    String         @id @default(cuid())
+  name                  String
+  slug                  String         @unique
+  plan                  Plan           @default(FREE)
+  stripeCustomerId      String?        @unique
+  stripeSubscriptionId  String?        @unique
+  subscriptionStatus    String?
+  maxUsers              Int            @default(5)
+  maxLeads              Int            @default(2000)
+  aiMonthlyCredits      Int            @default(50)
+  aiCreditsUsed         Int            @default(0)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  users                 User[]
+  leads                 Lead[]
+  customers             Customer[]
+  tasks                 Task[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+}
+
+model User {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email                 String         @unique
+  name                  String
+  passwordHash          String
+  role                  Role           @default(SALESPERSON)
+  isActive              Boolean        @default(true)
+  isPlatformAdmin       Boolean        @default(false)
+  emailVerified         DateTime?
+  inviteToken           String?        @unique
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  assignedLeads         Lead[]         @relation("AssignedSalesperson")
+  assignedTasks         Task[]         @relation("AssignedUser")
+  createdTasks          Task[]         @relation("TaskCreator")
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+
+  @@index([tenantId])
+}
+
+model Lead {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fullName              String
+  companyName           String?
+  email                 String
+  phone                 String?
+  website               String?
+  country               String?
+  leadSource            String?
+  industry              String?
+  estimatedValue        Float          @default(0.0)
+  status                LeadStatus     @default(NEW)
+  assignedToId          String?
+  assignedTo            User?          @relation("AssignedSalesperson", fields: [assignedToId], references: [id])
+  notes                 String?        @db.Text
+  lastContactedAt       DateTime?
+  nextFollowUpAt        DateTime?
+  convertedToCustomer   Boolean        @default(false)
+  customerId            String?        @unique
+  customer              Customer?      @relation(fields: [customerId], references: [id])
+  aiSummary             String?        @db.Text
+  aiSuggestedAction     String?        @db.Text
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  tasks                 Task[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+}
+
+model Customer {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  companyName           String
+  contactName           String
+  email                 String
+  phone                 String?
+  website               String?
+  industry              String?
+  notes                 String?        @db.Text
+  totalRevenue          Float          @default(0.0)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  lead                  Lead?
+  tasks                 Task[]
+
+  @@index([tenantId])
+}
+
+model Task {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title                 String
+  description           String?        @db.Text
+  dueDate               DateTime
+  priority              Priority       @default(MEDIUM)
+  status                TaskStatus     @default(PENDING)
+  assignedToId          String
+  assignedTo            User           @relation("AssignedUser", fields: [assignedToId], references: [id])
+  createdById           String
+  createdBy             User           @relation("TaskCreator", fields: [createdById], references: [id])
+  leadId                String?
+  lead                  Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customerId            String?
+  customer              Customer?      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([tenantId, dueDate])
+}
+
+model Notification {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                 String
+  message               String
+  isRead                Boolean        @default(false)
+  link                  String?
+  createdAt             DateTime       @default(now())
+
+  @@index([userId, isRead])
+}
+
+model AuditLog {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId                String?
+  user                  User?          @relation(fields: [userId], references: [id])
+  action                String
+  resource              String
+  details               String?        @db.Text
+  ipAddress             String?
+  createdAt             DateTime       @default(now())
+
+  @@index([tenantId])
+}
