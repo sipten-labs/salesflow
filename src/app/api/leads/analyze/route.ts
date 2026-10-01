@@ -57,30 +57,38 @@ Output strictly matching this JSON schema:
 }
 `;
 
-    // 3. Retry loop for high-demand (503) handling
+    // 3. Robust Retry loop with valid models fallback
+    const candidateModels = ["gemini-2.5-flash", "gemini-1.5-flash"];
     let responseText = "";
-    let attempts = 0;
-    const maxAttempts = 3;
+    let lastError: any = null;
 
-    while (attempts < maxAttempts) {
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
+    for (const modelName of candidateModels) {
+      let attempts = 0;
+      const maxAttempts = 2;
 
-        if (response?.text) {
-          responseText = response.text;
-          break;
+      while (attempts < maxAttempts) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: prompt,
+          });
+
+          if (response?.text) {
+            responseText = response.text;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          attempts++;
+          await new Promise((res) => setTimeout(res, 1500));
         }
-      } catch (err: any) {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          throw err;
-        }
-        // Agar high demand aaye toh 1 second ruk kar retry karega
-        await new Promise((res) => setTimeout(res, 1000));
       }
+
+      if (responseText) break;
+    }
+
+    if (!responseText) {
+      throw lastError || new Error("AI models are busy right now");
     }
 
     // Clean backticks if any
